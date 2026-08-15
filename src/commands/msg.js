@@ -5,6 +5,7 @@
 
 import { resolve } from "path";
 import { getApi } from "../core/zalo-client.js";
+import { withTemporaryListener } from "../core/temporary-listener.js";
 import { success, error, info, output } from "../utils/output.js";
 import { extractMessageText } from "../utils/extract-message-text.js";
 
@@ -180,10 +181,9 @@ export function registerMsgCommands(program) {
         .action(async (threadId, paths, opts) => {
             try {
                 const absPaths = paths.map((p) => resolve(p));
-                const result = await getApi().sendMessage(
-                    { msg: opts.caption, attachments: absPaths },
-                    threadId,
-                    Number(opts.type),
+                const api = getApi();
+                const result = await withTemporaryListener(api.listener, () =>
+                    api.sendMessage({ msg: opts.caption, attachments: absPaths }, threadId, Number(opts.type)),
                 );
                 output(result, program.opts().json, () => success(`File(s) sent to ${threadId}`));
             } catch (e) {
