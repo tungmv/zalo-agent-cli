@@ -135,18 +135,6 @@ Xem thêm: [Đa tài khoản & Proxy](https://github.com/PhucMPham/zalo-agent-cl
 
 ---
 
-## Ủng hộ
-
-Nếu tool này giúp bạn tiết kiệm thời gian, hãy mua cho chúng tôi một ly cà phê!
-
-<p align="center">
-  <img src="assets/donate-qr.jpg" width="280" alt="Donate qua VietQR (OCB)" />
-  <br/>
-  <em>Quét bằng app ngân hàng bất kỳ</em>
-</p>
-
----
-
 ## English
 
 CLI tool for Zalo automation — multi-account, proxy support, bank transfers, QR payments.
@@ -213,21 +201,7 @@ Full docs: **[Wiki](https://github.com/PhucMPham/zalo-agent-cli/wiki)**
 | `account` | Multi-account & proxy | [Accounts](https://github.com/PhucMPham/zalo-agent-cli/wiki/Accounts) |
 | **`oa`** | **Zalo Official Account API v3.0 — OAuth, messaging, followers, webhook** | **[Official Account](https://github.com/PhucMPham/zalo-agent-cli/wiki/Official-Account)** |
 
-### Support Us
-
-If this tool saves you time, consider buying us a coffee!
-
-<p align="center">
-  <img src="assets/donate-qr.jpg" width="280" alt="Donate via VietQR (OCB)" />
-  <br/>
-  <em>Scan with any Vietnamese banking app</em>
-</p>
-
 ---
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=PhucMPham/zalo-agent-cli&type=Date)](https://star-history.com/#PhucMPham/zalo-agent-cli&Date)
 
 ## License
 
