@@ -1,10 +1,7 @@
 /**
  * Cross-platform QR display utility.
- * Displays Zalo's official QR PNG inline in terminal and saves to file.
- *
- * IMPORTANT: Uses Zalo-server-generated PNG (via event.data.image base64),
- * NOT qrcode-terminal which re-encodes the token text into a different QR
- * that Zalo app cannot recognize as a login request.
+ * Displays Zalo's login QR directly in the terminal and saves the server PNG to file.
+ * Uses node-qrcode's terminal renderer with the same token URL as Zalo's PNG.
  *
  * Display methods:
  * 1. iTerm2/Kitty/WezTerm inline image (renders PNG directly in terminal)
@@ -16,10 +13,12 @@
 import { resolve } from "path";
 import { writeFileSync, mkdirSync } from "fs";
 import { platform } from "os";
+import QRCode from "qrcode";
 import { CONFIG_DIR } from "../core/credentials.js";
 import { info } from "./output.js";
 
 const QR_PATH = resolve(CONFIG_DIR, "qr.png");
+const QR_LOGIN_URL_PREFIX = "http://zaloapp.com/qr/l?tk=";
 
 /** Get platform-specific command to open a file. */
 function getOpenCommand() {
@@ -35,11 +34,11 @@ function getOpenCommand() {
 
 /**
  * Display QR code from a zca-js login QR event.
- * Synchronous — safe to call from zca-js callback.
+ * Async — safe to call from zca-js callback; rendering is performed by node-qrcode.
  * In JSON mode (--json), outputs structured event for AI agents.
  * @param {object} event - zca-js QR callback event
  */
-export function displayQR(event) {
+export async function displayQR(event) {
     const imageB64 = event.data?.image || "";
     const jsonMode = process.env.ZALO_JSON_MODE === "1";
 
@@ -71,17 +70,26 @@ export function displayQR(event) {
         return;
     }
 
-    // Human mode: terminal inline image + hints
-    if (imageB64) {
-        // iTerm2/Kitty/WezTerm inline image protocol
+    // Zalo's PNG encodes the token URL; data.code is only the polling code.
+    const qrCode = event.data?.token ? `${QR_LOGIN_URL_PREFIX}${event.data.token}` : "";
+    if (qrCode) {
+        try {
+            const terminalQR = await QRCode.toString(qrCode, { type: "terminal", small: true });
+            console.log(terminalQR);
+        } catch (error) {
+            info(`Could not render QR in terminal: ${error.message}`);
+        }
+    } else if (imageB64) {
+        // Keep the image fallback when an event does not include the token.
         const b64ForTerm = Buffer.from(imageB64, "base64").toString("base64");
         process.stdout.write(`\x1b]1337;File=inline=1;width=30;preserveAspectRatio=1:${b64ForTerm}\x07\n`);
+    }
 
+    if (imageB64) {
         const openCmd = getOpenCommand();
         info(`QR image saved: ${QR_PATH}`);
         info(`To open: ${openCmd} "${QR_PATH}"`);
-        info("Copy this URL and paste in any browser to view QR:");
-        console.log(`data:image/png;base64,${imageB64}`);
+        info("Scan the QR code above with Zalo > QR Scanner.");
     }
 }
 

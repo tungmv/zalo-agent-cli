@@ -5,11 +5,15 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { displayQR, getQRPath } from "./qr-display.js";
-import { existsSync, unlinkSync, mkdirSync } from "fs";
+import { existsSync, unlinkSync, mkdirSync, readFileSync } from "fs";
 import { dirname } from "path";
+import QRCode from "qrcode";
 
 // Tiny valid 1x1 white PNG as base64 (for testing without real QR)
 const TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+const LOGIN_CODE = "test-zalo-login-code";
+const LOGIN_TOKEN = "zaloqr:v2_test-token";
+const LOGIN_URL = `http://zaloapp.com/qr/l?tk=${LOGIN_TOKEN}`;
 
 describe("displayQR", () => {
     let originalLog;
@@ -36,9 +40,9 @@ describe("displayQR", () => {
         } catch {}
     });
 
-    it("JSON mode outputs structured event with all fields", () => {
+    it("JSON mode outputs structured event with all fields", async () => {
         process.env.ZALO_JSON_MODE = "1";
-        displayQR({ data: { image: TINY_PNG_B64 } });
+        await displayQR({ data: { image: TINY_PNG_B64 } });
 
         assert.equal(captured.length, 1, "should output exactly one JSON line");
         const parsed = JSON.parse(captured[0]);
@@ -49,7 +53,7 @@ describe("displayQR", () => {
         assert.ok(parsed.dataUrl.includes(TINY_PNG_B64), "dataUrl should contain full base64");
     });
 
-    it("JSON mode does not output terminal escape sequences", () => {
+    it("JSON mode does not output terminal escape sequences", async () => {
         process.env.ZALO_JSON_MODE = "1";
 
         // Also capture stdout.write
@@ -57,7 +61,7 @@ describe("displayQR", () => {
         const originalWrite = process.stdout.write;
         process.stdout.write = (data) => stdoutWrites.push(data);
 
-        displayQR({ data: { image: TINY_PNG_B64 } });
+        await displayQR({ data: { image: TINY_PNG_B64 } });
 
         process.stdout.write = originalWrite;
 
@@ -66,32 +70,30 @@ describe("displayQR", () => {
         assert.ok(!hasEscape, "JSON mode should not output terminal escape sequences");
     });
 
-    it("saves QR PNG file in both modes", () => {
+    it("saves QR PNG file in both modes", async () => {
         process.env.ZALO_JSON_MODE = "1";
-        displayQR({ data: { image: TINY_PNG_B64 } });
+        await displayQR({ data: { image: TINY_PNG_B64 } });
         assert.ok(existsSync(getQRPath()), "QR PNG should be saved to disk");
     });
 
-    it("handles empty image gracefully in JSON mode", () => {
+    it("handles empty image gracefully in JSON mode", async () => {
         process.env.ZALO_JSON_MODE = "1";
-        displayQR({ data: {} });
+        await displayQR({ data: {} });
         assert.equal(captured.length, 0, "should not output anything for empty image");
     });
 
-    it("human mode outputs data URL with full base64 (not truncated)", () => {
-        // No ZALO_JSON_MODE set = human mode
-        // Suppress stdout.write (terminal escapes)
-        const originalWrite = process.stdout.write;
-        process.stdout.write = () => true;
+    it("human mode renders the same token URL as the saved PNG", async () => {
+        const imageDataUrl = await QRCode.toDataURL(LOGIN_URL);
+        const imageB64 = imageDataUrl.replace(/^data:image\/png;base64,/, "");
+        const expectedTerminalQR = await QRCode.toString(LOGIN_URL, { type: "terminal", small: true });
 
-        displayQR({ data: { image: TINY_PNG_B64 } });
+        await displayQR({ data: { code: LOGIN_CODE, token: LOGIN_TOKEN, image: imageB64 } });
 
-        process.stdout.write = originalWrite;
-
-        // Find the data URL line in captured output
-        const dataUrlLine = captured.find((line) => line.startsWith("data:image/png;base64,"));
-        assert.ok(dataUrlLine, "should output a data URL line");
-        assert.ok(dataUrlLine.includes(TINY_PNG_B64), "data URL should contain full base64, not truncated");
-        assert.ok(!dataUrlLine.includes("..."), "data URL should not be truncated with ...");
+        assert.equal(captured[0], expectedTerminalQR, "terminal QR should encode the token URL");
+        assert.equal(readFileSync(getQRPath()).toString("base64"), imageB64, "PNG should preserve the server image");
+        const output = captured.join("\n");
+        assert.match(output, /\u001b\[47m/, "should use node-qrcode terminal rendering");
+        assert.match(output, /QR Scanner/, "should tell the user how to scan");
+        assert.doesNotMatch(output, /data:image\/png;base64,/, "human output should not dump image base64");
     });
 });
