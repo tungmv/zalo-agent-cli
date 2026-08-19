@@ -6,6 +6,7 @@
 import { appendFileSync, mkdirSync, existsSync } from "fs";
 import { resolve, join } from "path";
 import { getApi, autoLogin, clearSession } from "../core/zalo-client.js";
+import { createListenerReconnect } from "../core/listener-reconnect.js";
 import { success, error, info, warning } from "../utils/output.js";
 
 /** Thread types matching zca-js ThreadType enum */
@@ -24,9 +25,6 @@ const FRIEND_EVENT_LABELS = {
     7: "unblocked",
 };
 const FRIEND_REQUEST_TYPE = 2;
-
-/** Zalo close code for duplicate web session */
-const CLOSE_DUPLICATE = 3000;
 
 export function registerListenCommand(program) {
     program
@@ -220,43 +218,37 @@ export function registerListenCommand(program) {
                     warning(`Disconnected (code: ${code}). Auto-retrying...`);
                 });
 
-                api.listener.on("closed", async (code, _reason) => {
-                    if (code === CLOSE_DUPLICATE) {
-                        error("Another Zalo Web session opened. Listener stopped.");
-                        process.exit(1);
-                    }
-                    reconnectCount++;
-                    warning(`Connection closed (code: ${code}). Re-login in 5s... (uptime: ${uptime()})`);
-                    await new Promise((r) => setTimeout(r, 5000));
-                    try {
-                        clearSession();
-                        await autoLogin(jsonMode);
-                        info("Re-login successful. Restarting listener...");
-                        // Attach ALL handlers to the NEW api (including lifecycle)
-                        const newApi = getApi();
-                        attachAllHandlers(newApi);
-                        newApi.listener.start({ retryOnClose: true });
-                    } catch (e) {
-                        error(`Re-login failed: ${e.message}. Retrying in 30s...`);
-                        await new Promise((r) => setTimeout(r, 30000));
-                        try {
-                            clearSession();
-                            await autoLogin(jsonMode);
-                            const retryApi = getApi();
-                            attachAllHandlers(retryApi);
-                            retryApi.listener.start({ retryOnClose: true });
-                            info("Re-login successful on retry.");
-                        } catch (e2) {
-                            error(`Re-login retry failed: ${e2.message}. Exiting.`);
-                            process.exit(1);
-                        }
-                    }
-                });
+                api.listener.on("closed", reconnect.handleClosed);
 
                 api.listener.on("error", (_err) => {
                     // WS errors are followed by close/disconnect — don't crash
                 });
             }
+
+            const reconnect = createListenerReconnect({
+                getApi,
+                clearSession,
+                autoLogin: () => autoLogin(jsonMode),
+                attach: attachAllHandlers,
+                start: (api) => api.listener.start({ retryOnClose: true }),
+                onDuplicate: () => {
+                    error("Another Zalo Web session opened. Listener stopped.");
+                    process.exit(1);
+                },
+                onReconnecting: (code, _reason, count) => {
+                    reconnectCount = count;
+                    warning(`Connection closed (code: ${code}). Re-login in 5s... (uptime: ${uptime()})`);
+                },
+                onReconnected: () => info("Re-login successful. Restarting listener..."),
+                onFailure: (e, _count, final) => {
+                    if (final) {
+                        error(`Re-login retry failed: ${e.message}. Exiting.`);
+                        process.exit(1);
+                    } else {
+                        error(`Re-login failed: ${e.message}. Retrying in 30s...`);
+                    }
+                },
+            });
 
             // --- Initial start ---
             try {

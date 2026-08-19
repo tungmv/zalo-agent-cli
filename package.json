@@ -4,22 +4,23 @@
   "description": "CLI tool for Zalo automation — multi-account, proxy, bank transfers, QR payments, Official Account API v3.0",
   "type": "module",
   "bin": {
-    "zalo-agent": "src/index.js"
+    "zalo-agent": "dist/index.js"
   },
-  "main": "./src/index.js",
+  "main": "./dist/index.js",
   "files": [
-    "src/",
+    "dist/",
     "LICENSE",
     "DISCLAIMER.md"
   ],
   "scripts": {
-    "test": "node --test src/*.test.js src/**/*.test.js",
+    "build": "tsc --project tsconfig.json",
+    "test": "node --test dist/*.test.js dist/**/*.test.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
     "release": "npm version patch -m 'release: v%s' && git push origin main --tags",
-    "prepublishOnly": "npm run lint && npm test"
+    "prepublishOnly": "npm run build && npm run lint && npm run format:check && npm test"
   },
   "keywords": [
     "zalo",
@@ -54,7 +55,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/node": "^22.13.4",
     "eslint": "^10.0.3",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "typescript": "^5.7.2"
   }
 }

@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "child_process";
 import { resolve } from "path";
 
-const CLI = resolve(import.meta.dirname, "index.js");
+const CLI = resolve(import.meta.dirname, "../dist/index.js");
 
 function run(...args) {
     return execFileSync("node", [CLI, ...args], {
