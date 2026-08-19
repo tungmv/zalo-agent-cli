@@ -5,8 +5,9 @@
  * helper starts a listener only when needed and cleans up only what it owns.
  */
 
+import { isListenerOpen, isListenerStarted } from "./listener-state.js";
+
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
-const OPEN_READY_STATE = 1;
 
 function assertListener(listener) {
     if (!listener || typeof listener.on !== "function" || typeof listener.removeListener !== "function") {
@@ -26,14 +27,6 @@ function asError(error, fallback = "Zalo listener error") {
 function closedError(code, reason) {
     const details = [code === undefined ? null : `code ${code}`, reason || null].filter(Boolean).join(": ");
     return new Error(`Zalo listener closed${details ? ` (${details})` : ""}`);
-}
-
-function isStarted(listener) {
-    return Boolean(listener.ws);
-}
-
-function isOpen(listener) {
-    return listener.ws?.readyState === OPEN_READY_STATE;
 }
 
 /**
@@ -56,8 +49,8 @@ export async function withTemporaryListener(
         throw new TypeError("Listener operation must be a function");
     }
 
-    const ownsListener = !isStarted(listener);
-    let connected = isOpen(listener);
+    const ownsListener = !isListenerStarted(listener);
+    let connected = isListenerOpen(listener);
     let resolveConnected;
     let rejectConnected;
     let rejectFailure;

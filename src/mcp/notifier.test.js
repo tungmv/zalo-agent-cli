@@ -74,6 +74,21 @@ describe("ZaloNotifier constructor", () => {
         const n = new ZaloNotifier(api, enabledConfig());
         assert.equal(n._agentConnected, false);
     });
+
+    it("resolves the active API when a notification is sent", async () => {
+        const first = makeSpy();
+        const second = makeSpy();
+        let active = first.api;
+        const n = new ZaloNotifier(() => active, enabledConfig());
+
+        n.onMessage(dmMsg("after reconnect"));
+        active = second.api;
+        await wait(30);
+
+        assert.equal(first.calls.length, 0);
+        assert.equal(second.calls.length, 1);
+        n.destroy();
+    });
 });
 
 describe("ZaloNotifier onMessage - disabled", () => {

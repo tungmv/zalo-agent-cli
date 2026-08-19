@@ -31,13 +31,14 @@ function err(message) {
 /**
  * Register all Zalo MCP tools on the server.
  * @param {import("@modelcontextprotocol/sdk/server/mcp.js").McpServer} server
- * @param {object} api - zca-js API instance
+ * @param {object|(() => object)} apiOrResolver - zca-js API instance or resolver
  * @param {import("./message-buffer.js").MessageBuffer} buffer
  * @param {import("./thread-filter.js").ThreadFilter} filter
  * @param {object} config - MCP config
  * @param {import("./thread-name-cache.js").ThreadNameCache} [nameCache] - Thread name cache
  */
-export function registerTools(server, api, buffer, filter, config, nameCache) {
+export function registerTools(server, apiOrResolver, buffer, filter, config, nameCache) {
+    const getApi = typeof apiOrResolver === "function" ? apiOrResolver : () => apiOrResolver;
     const maxPerPoll = config.limits?.maxMessagesPerPoll ?? 20;
 
     // --- zalo_get_messages ---
@@ -91,7 +92,7 @@ export function registerTools(server, api, buffer, filter, config, nameCache) {
         },
         async ({ threadId, text, threadType }) => {
             try {
-                const result = await api.sendMessage(text, threadId, Number(threadType));
+                const result = await getApi().sendMessage(text, threadId, Number(threadType));
                 const messageId = result?.message?.msgId ?? result?.msgId ?? null;
                 return ok({ success: true, messageId });
             } catch (e) {
@@ -234,16 +235,16 @@ export function registerTools(server, api, buffer, filter, config, nameCache) {
                     const pageMessages = await new Promise((resolve) => {
                         const handler = (messages) => {
                             clearTimeout(timer);
-                            api.listener.removeListener("old_messages", handler);
+                            getApi().listener.removeListener("old_messages", handler);
                             resolve(messages);
                         };
                         const timer = setTimeout(() => {
-                            api.listener.removeListener("old_messages", handler);
+                            getApi().listener.removeListener("old_messages", handler);
                             resolve([]);
                         }, 10000);
 
-                        api.listener.on("old_messages", handler);
-                        api.listener.requestOldMessages(threadType, cursor);
+                        getApi().listener.on("old_messages", handler);
+                        getApi().listener.requestOldMessages(threadType, cursor);
                     });
 
                     if (!pageMessages || pageMessages.length === 0) {
@@ -265,9 +266,7 @@ export function registerTools(server, api, buffer, filter, config, nameCache) {
                             threadId: msg.threadId,
                             senderId: msg.data?.uidFrom || null,
                             senderName: msg.data?.dName || null,
-                            text: isText
-                                ? rawContent
-                                : extractMessageText(rawContent, msg.data?.msgType),
+                            text: isText ? rawContent : extractMessageText(rawContent, msg.data?.msgType),
                             timestamp: msg.data?.ts ? Number(msg.data.ts) : null,
                             type: isText ? "text" : msg.data?.msgType || "attachment",
                         });

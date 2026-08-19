@@ -6,6 +6,7 @@
  */
 
 import { getApi, autoLogin, clearSession } from "../core/zalo-client.js";
+import { createListenerReconnect } from "../core/listener-reconnect.js";
 import { MessageBuffer } from "../mcp/message-buffer.js";
 import { ThreadFilter } from "../mcp/thread-filter.js";
 import { loadMCPConfig, parseDuration } from "../mcp/mcp-config.js";
@@ -16,9 +17,6 @@ import { createHTTPServer } from "../mcp/mcp-http-transport.js";
 import { ZaloNotifier } from "../mcp/notifier.js";
 import { ThreadNameCache } from "../mcp/thread-name-cache.js";
 import { autoDownloadMedia, isDownloadableMedia } from "../mcp/media-downloader.js";
-
-/** Zalo close code for duplicate web session — fatal, do not retry */
-const CLOSE_DUPLICATE = 3000;
 
 /**
  * Normalize a raw zca-js message event into the buffer's message shape.
@@ -94,12 +92,12 @@ export function registerMCPCommands(program) {
                         console.error(`[mcp] Invalid port: ${opts.http}. Must be 1-65535.`);
                         process.exit(1);
                     }
-                    const deps = { api: getApi(), buffer, filter, config, nameCache };
+                    const deps = { api: getApi, buffer, filter, config, nameCache };
                     const authToken = opts.auth?.trim() || null;
                     httpServer = createHTTPServer(registerTools, deps, port, authToken, opts.host || "127.0.0.1");
                     console.error(`[mcp] HTTP server started on port ${port}`);
                 } else {
-                    await createMCPServer(getApi(), buffer, filter, config, nameCache);
+                    await createMCPServer(getApi, buffer, filter, config, nameCache);
                 }
             } catch (e) {
                 console.error("[mcp] Failed to start MCP server:", e.message);
@@ -107,7 +105,7 @@ export function registerMCPCommands(program) {
             }
 
             // Setup notifier (sends to Zalo group when agent is offline)
-            const notifier = new ZaloNotifier(getApi(), config);
+            const notifier = new ZaloNotifier(getApi, config);
 
             let reconnectCount = 0;
 
@@ -153,44 +151,39 @@ export function registerMCPCommands(program) {
                     console.error(`[mcp] Disconnected (code: ${code}). Auto-retrying...`);
                 });
 
-                api.listener.on("closed", async (code) => {
-                    if (code === CLOSE_DUPLICATE) {
-                        console.error("[mcp] Duplicate Zalo Web session detected. Exiting.");
-                        process.exit(1);
-                    }
-                    reconnectCount++;
-                    console.error(
-                        `[mcp] Connection closed (code: ${code}). Re-login in 5s... (reconnect #${reconnectCount})`,
-                    );
-                    await new Promise((r) => setTimeout(r, 5000));
-                    try {
-                        clearSession();
-                        await autoLogin(false);
-                        console.error("[mcp] Re-login successful. Restarting listener...");
-                        const newApi = getApi();
-                        attachListenerHandlers(newApi);
-                        newApi.listener.start({ retryOnClose: true });
-                    } catch (e) {
-                        console.error(`[mcp] Re-login failed: ${e.message}. Retrying in 30s...`);
-                        await new Promise((r) => setTimeout(r, 30000));
-                        try {
-                            clearSession();
-                            await autoLogin(false);
-                            const retryApi = getApi();
-                            attachListenerHandlers(retryApi);
-                            retryApi.listener.start({ retryOnClose: true });
-                            console.error("[mcp] Re-login successful on retry.");
-                        } catch (e2) {
-                            console.error(`[mcp] Re-login retry failed: ${e2.message}. Exiting.`);
-                            process.exit(1);
-                        }
-                    }
-                });
+                api.listener.on("closed", reconnect.handleClosed);
 
                 api.listener.on("error", () => {
                     // WS errors are followed by close/disconnect — suppress to avoid noise
                 });
             }
+
+            const reconnect = createListenerReconnect({
+                getApi,
+                clearSession,
+                autoLogin: () => autoLogin(false),
+                attach: attachListenerHandlers,
+                start: (api) => api.listener.start({ retryOnClose: true }),
+                onDuplicate: () => {
+                    console.error("[mcp] Duplicate Zalo Web session detected. Exiting.");
+                    process.exit(1);
+                },
+                onReconnecting: (code, _reason, count) => {
+                    reconnectCount = count;
+                    console.error(
+                        `[mcp] Connection closed (code: ${code}). Re-login in 5s... (reconnect #${reconnectCount})`,
+                    );
+                },
+                onReconnected: () => console.error("[mcp] Re-login successful. Restarting listener..."),
+                onFailure: (e, _count, final) => {
+                    if (final) {
+                        console.error(`[mcp] Re-login retry failed: ${e.message}. Exiting.`);
+                        process.exit(1);
+                    } else {
+                        console.error(`[mcp] Re-login failed: ${e.message}. Retrying in 30s...`);
+                    }
+                },
+            });
 
             // Wire listener and start
             try {
